@@ -1,0 +1,74 @@
+{
+  "name": "deepseek-harness-desktop",
+  "version": "0.1.0",
+  "description": "DeepSeek Harness 桌面版：托盘图标启动 + DeepSeek 过渡动画",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/fanxingriyue/deepseek-harness-desktop.git"
+  },
+  "main": "main.js",
+  "author": "DeepSeek",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "generate-icons": "node scripts/make-official-icon.js",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --win"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.deepseek.harness",
+    "productName": "DeepSeek Harness",
+    "copyright": "MIT",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "asar": false,
+    "files": [
+      "main.js",
+      "preload.js",
+      "splash.html",
+      "splash.css",
+      "splash.js",
+      "menu.html",
+      "menu.css",
+      "menu.js",
+      "assets/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "vendor",
+        "to": "vendor"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "DeepSeek Harness"
+    }
+  }
+}

@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:" />
+    <title>DeepSeek</title>
+    <link rel="stylesheet" href="menu.css" />
+  </head>
+  <body>
+    <div class="menu" id="menu">
+      <div class="menu-head">
+        <img class="menu-logo" src="assets/whale.png" alt="" draggable="false" />
+        <span class="menu-title">DeepSeek Harness</span>
+        <span class="status-dot" title="服务运行中"></span>
+      </div>
+
+      <div class="menu-item" data-action="open">
+        <svg class="item-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4"/></svg>
+        <span>打开 DeepSeek Harness</span>
+      </div>
+      <div class="menu-item" data-action="browser">
+        <svg class="item-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.9 5.7 3.9 9s-1.4 6.4-3.9 9c-2.5-2.6-3.9-5.7-3.9-9S9.5 5.6 12 3z"/></svg>
+        <span>在浏览器中打开</span>
+      </div>
+
+      <div class="menu-sep"></div>
+
+      <div class="balance-block">
+        <div class="balance-label">ACCOUNT BALANCE</div>
+        <div class="balance-total" id="balanceTotal">查询中…</div>
+        <div class="balance-detail" id="balanceDetail"></div>
+      </div>
+      <div class="menu-item" data-action="refresh">
+        <svg class="item-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg>
+        <span>刷新余额</span>
+      </div>
+
+      <div class="menu-sep"></div>
+
+      <div class="menu-item danger" data-action="quit">
+        <svg class="item-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v9"/><path d="M18.4 6.6a9 9 0 1 1-12.8 0"/></svg>
+        <span>退出</span>
+      </div>
+    </div>
+    <script src="menu.js"></script>
+  </body>
+</html>

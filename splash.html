@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:" />
+    <title>DeepSeek Harness</title>
+    <link rel="stylesheet" href="splash.css" />
+  </head>
+  <body>
+    <div class="splash" id="splash">
+      <div class="stars" id="stars" aria-hidden="true"></div>
+      <div class="bubbles" id="bubbles" aria-hidden="true"></div>
+
+      <button class="min-btn" id="minBtn" title="最小化" aria-label="最小化">
+        <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+          <line x1="2" y1="6" x2="10" y2="6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+        </svg>
+      </button>
+
+      <div class="content" id="content">
+        <div class="logo-wrap" id="logoWrap">
+          <span class="ripple r1"></span>
+          <span class="ripple r2"></span>
+          <span class="ripple r3"></span>
+          <img class="whale" src="assets/whale.png" alt="DeepSeek" draggable="false" />
+        </div>
+
+        <h1 class="title">DeepSeek <span>Harness</span></h1>
+        <p class="subtitle" id="subtitle">正在启动本地服务…</p>
+
+        <div class="progress"><div class="progress-bar" id="bar"></div></div>
+        <p class="status" id="status">正在连接 DeepSeek Harness…</p>
+      </div>
+
+      <div class="error-panel" id="errorPanel" hidden>
+        <div class="error-icon">!</div>
+        <h2>启动失败</h2>
+        <p id="errorMsg"></p>
+        <div class="actions">
+          <button id="retryBtn" class="btn primary">重试</button>
+          <button id="quitBtn" class="btn ghost">退出</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="splash.js"></script>
+  </body>
+</html>

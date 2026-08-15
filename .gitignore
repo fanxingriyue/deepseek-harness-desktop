@@ -1,0 +1,12 @@
+# Dependencies
+node_modules/
+
+# Bundled runtime (342 MB of third-party binaries; prepare with scripts/prepare-vendor.ps1)
+vendor/
+
+# Build output
+release/
+
+# Logs and temp
+*.log
+*.tmp
