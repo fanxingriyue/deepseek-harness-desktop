@@ -37,9 +37,18 @@
 
       <div class="menu-sep"></div>
 
-      <div class="menu-item danger" data-action="quit">
+      <div class="menu-item" data-action="autostart">
+        <svg class="item-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2 4.5 13.5H11L10 22l8.5-11.5H12z"/></svg>
+        <span>开机自启后台服务</span>
+        <span class="menu-check">✓</span>
+      </div>
+      <div class="menu-item" data-action="quit">
         <svg class="item-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v9"/><path d="M18.4 6.6a9 9 0 1 1-12.8 0"/></svg>
-        <span>退出</span>
+        <span>退出（保持后台服务）</span>
+      </div>
+      <div class="menu-item danger" data-action="stop">
+        <svg class="item-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v9"/><path d="M18.4 6.6a9 9 0 1 1-12.8 0"/></svg>
+        <span>停止后台服务并退出</span>
       </div>
     </div>
     <script src="menu.js"></script>

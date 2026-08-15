@@ -37,6 +37,11 @@ let balanceText = '余额：查询中…'
 let balanceTimer = null
 let lastBalanceData = { total: '查询中…', detail: '', error: false, low: false }
 
+/** --backend-only: silent logon pre-warm; start the backend, record it, exit. */
+const backendOnly = process.argv.includes('--backend-only')
+/** Whether "start backend at logon" is enabled (tray-menu toggle). */
+let autostartBackend = true
+
 const assetsDir = path.join(__dirname, 'assets')
 
 /** Track the web UI's active theme so the window background matches it. */
@@ -147,16 +152,147 @@ function buildDshSpawn() {
 function killDsh() {
   const proc = dshProc
   dshProc = null
-  if (!proc) return
+  // Adoption mode: dshProc is null, kill the backend recorded in server.json.
+  let pid = proc ? proc.pid : null
+  if (!pid) {
+    const state = readServerState()
+    if (state) pid = state.pid
+  }
+  if (!pid) return
   try {
-    if (process.platform === 'win32' && proc.pid) {
-      spawnSync('taskkill', ['/pid', String(proc.pid), '/T', '/F'], { windowsHide: true })
+    if (process.platform === 'win32') {
+      spawnSync('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true })
     } else {
-      proc.kill('SIGTERM')
+      proc ? proc.kill('SIGTERM') : process.kill(pid, 'SIGTERM')
     }
   } catch (err) {
     log('kill error', String(err))
   }
+}
+
+// ---------------------------------------------------------------------------
+// persistent backend: keep the dsh server alive across app restarts so the
+// next launch adopts it and starts in seconds
+// ---------------------------------------------------------------------------
+
+let readyLogPath = null
+let readyPollTimer = null
+
+function serverStateFile() {
+  return path.join(app.getPath('userData'), 'server.json')
+}
+
+function readServerState() {
+  try {
+    const data = JSON.parse(fs.readFileSync(serverStateFile(), 'utf8'))
+    if (data && typeof data.url === 'string' && typeof data.pid === 'number') return data
+  } catch (err) { /* ignore */ }
+  return null
+}
+
+function writeServerState(url, pid) {
+  try {
+    fs.mkdirSync(path.dirname(serverStateFile()), { recursive: true })
+    fs.writeFileSync(serverStateFile(), JSON.stringify({ url: url, pid: pid, startedAt: Date.now() }))
+  } catch (err) { /* ignore */ }
+}
+
+function clearServerState() {
+  try { fs.unlinkSync(serverStateFile()) } catch (err) { /* ignore */ }
+}
+
+// ---------------------------------------------------------------------------
+// prefs + booting marker
+// ---------------------------------------------------------------------------
+
+function prefsFile() {
+  return path.join(app.getPath('userData'), 'prefs.json')
+}
+
+function readPrefs() {
+  try {
+    const data = JSON.parse(fs.readFileSync(prefsFile(), 'utf8'))
+    if (data && typeof data === 'object') return data
+  } catch (err) { /* ignore */ }
+  return {}
+}
+
+function writePrefs(p) {
+  try {
+    fs.mkdirSync(path.dirname(prefsFile()), { recursive: true })
+    fs.writeFileSync(prefsFile(), JSON.stringify(p))
+  } catch (err) { /* ignore */ }
+}
+
+function backendBootingFile() {
+  return path.join(app.getPath('userData'), 'backend-booting.json')
+}
+
+/** Mark "a backend is booting right now" so concurrent launches wait instead of spawning a second one. */
+function writeBootingMarker() {
+  try {
+    fs.mkdirSync(path.dirname(backendBootingFile()), { recursive: true })
+    fs.writeFileSync(backendBootingFile(), JSON.stringify({ at: Date.now() }))
+  } catch (err) { /* ignore */ }
+}
+
+function clearBootingMarker() {
+  try { fs.unlinkSync(backendBootingFile()) } catch (err) { /* ignore */ }
+}
+
+function bootingMarkerFresh() {
+  try {
+    return Date.now() - fs.statSync(backendBootingFile()).mtimeMs < 90000
+  } catch (err) { return false }
+}
+
+/** Toggle the "start backend at logon" setting: persist + Windows Run entry. */
+function applyAutostart(enabled) {
+  autostartBackend = !!enabled
+  const prefs = readPrefs()
+  prefs.autostartBackend = autostartBackend
+  writePrefs(prefs)
+  if (process.platform === 'win32') {
+    try {
+      app.setLoginItemSettings({ openAtLogin: autostartBackend, args: ['--backend-only'] })
+      log('autostart backend', autostartBackend ? 'on' : 'off')
+    } catch (err) {
+      log('autostart error', String(err))
+    }
+  }
+  sendMenuData()
+}
+
+function pidAlive(pid) {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (err) {
+    return err.code === 'EPERM'
+  }
+}
+
+async function serverResponds(url) {
+  try {
+    await fetch(url, { signal: AbortSignal.timeout(2500) })
+    return true
+  } catch (err) {
+    return false
+  }
+}
+
+async function tryAdoptServer() {
+  const state = readServerState()
+  if (!state) return false
+  if (!pidAlive(state.pid)) { clearServerState(); return false }
+  if (!(await serverResponds(state.url))) return false
+  log('adopt existing server', state.url)
+  onServerReady(state.url)
+  return true
+}
+
+function stopReadyPoll() {
+  if (readyPollTimer) { clearInterval(readyPollTimer); readyPollTimer = null }
 }
 
 function startDsh() {
@@ -165,33 +301,83 @@ function startDsh() {
     showStartupError('未找到 dsh 命令。请先安装 DeepSeek Harness（npx @deepseek-ai/dsh web），或设置 DSH_BIN 环境变量指向 dsh。')
     return
   }
+  // Instant startup: adopt an already-running backend if one exists.
+  tryAdoptServer().then(function (adopted) {
+    if (adopted) return
+    // A backend may be mid-boot (logon pre-warm): wait for it instead of
+    // spawning a duplicate.
+    waitForBootingBackend().then(function (found) {
+      if (!found) spawnDsh(spec)
+    })
+  })
+}
+
+/** Wait up to 25s for a backend that is currently booting (booting marker present). */
+function waitForBootingBackend() {
+  return new Promise(function (resolve) {
+    if (!bootingMarkerFresh()) { resolve(false); return }
+    let checking = false
+    const deadline = Date.now() + 25000
+    const timer = setInterval(function () {
+      if (isQuitting || Date.now() > deadline || !bootingMarkerFresh()) {
+        clearInterval(timer)
+        resolve(false)
+        return
+      }
+      if (checking) return
+      checking = true
+      const state = readServerState()
+      if (state && pidAlive(state.pid)) {
+        serverResponds(state.url).then(function (ok) {
+          checking = false
+          if (ok) {
+            clearInterval(timer)
+            log('adopt warmed backend', state.url)
+            onServerReady(state.url)
+            resolve(true)
+          }
+        })
+      } else {
+        checking = false
+      }
+    }, 400)
+  })
+}
+
+function spawnDsh(spec) {
   const env = Object.assign({}, process.env)
   if (spec.asNode) env.ELECTRON_RUN_AS_NODE = '1'
   if (spec.bundled) {
     delete env.NODE_PATH
     delete env.DSH_BIN
   }
+  const logDir = path.join(app.getPath('userData'), 'logs')
+  try { fs.mkdirSync(logDir, { recursive: true }) } catch (err) { /* ignore */ }
+  const outLog = path.join(logDir, 'dsh-out.log')
+  const errLog = path.join(logDir, 'dsh-err.log')
+  let outFd = 'ignore'
+  let errFd = 'ignore'
+  try {
+    outFd = fs.openSync(outLog, 'w')
+    errFd = fs.openSync(errLog, 'w')
+  } catch (err) { /* keep 'ignore' */ }
   log('spawn', spec.command, spec.args.join(' '))
   let proc
   try {
-    proc = spawn(spec.command, spec.args, { env: env, shell: spec.shell, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
+    // Detached so the backend survives app restarts; output goes to log files
+    // (pipes would break when this process exits).
+    proc = spawn(spec.command, spec.args, { env: env, shell: spec.shell, detached: true, windowsHide: true, stdio: ['ignore', outFd, errFd] })
   } catch (err) {
     showStartupError('无法启动 dsh：' + String(err && err.message ? err.message : err))
     return
   }
+  if (outFd !== 'ignore') { try { fs.closeSync(outFd) } catch (err) { /* ignore */ } }
+  if (errFd !== 'ignore') { try { fs.closeSync(errFd) } catch (err) { /* ignore */ } }
+  proc.unref()
   dshProc = proc
+  readyLogPath = outLog
+  writeBootingMarker()
 
-  let buffer = ''
-  proc.stdout.on('data', function (chunk) {
-    buffer += chunk.toString()
-    let idx
-    while ((idx = buffer.indexOf('\n')) >= 0) {
-      const line = buffer.slice(0, idx).replace(/\r$/, '')
-      buffer = buffer.slice(idx + 1)
-      onDshLine(line)
-    }
-  })
-  proc.stderr.on('data', function (chunk) { process.stderr.write('[dsh] ' + chunk.toString()) })
   proc.on('error', function (err) {
     showStartupError('dsh 启动失败：' + String(err && err.message ? err.message : err))
   })
@@ -203,15 +389,27 @@ function startDsh() {
     }
   })
 
-  setTimeout(function () {
-    if (!webUrl && !isQuitting) showStartupError('等待 dsh web 就绪超时。')
-  }, READY_TIMEOUT_MS)
+  // Readiness: poll the stdout log file for the URL line.
+  const deadline = Date.now() + READY_TIMEOUT_MS
+  readyPollTimer = setInterval(function () {
+    if (webUrl) { stopReadyPoll(); return }
+    if (Date.now() > deadline) {
+      stopReadyPoll()
+      if (!isQuitting) showStartupError('等待 dsh web 就绪超时。')
+      return
+    }
+    let text = ''
+    try { text = fs.readFileSync(readyLogPath, 'utf8') } catch (err) { return }
+    const m = READY_LINE.exec(text)
+    if (m && !webUrl) onServerReady(m[1])
+  }, 150)
 }
 
-function onDshLine(line) {
-  log('dsh', line)
-  const m = READY_LINE.exec(line)
-  if (m && !webUrl) onServerReady(m[1])
+/** Kill the backend and forget its state (explicit stop). */
+function stopServer() {
+  stopReadyPoll()
+  killDsh()
+  clearServerState()
 }
 
 // ---------------------------------------------------------------------------
@@ -306,11 +504,6 @@ function createMainWindow(url) {
   mainWindow.webContents.on('did-finish-load', function () {
     injectUiTheme()
     pageLoaded = true
-    if (splashWindow && !splashWindow.isDestroyed()) {
-      splashWindow.webContents.send('splash:go')
-    } else {
-      splashExited = true
-    }
     maybeReveal()
   })
 
@@ -355,7 +548,7 @@ function revealMain() {
   // Paint one invisible frame first, then fade in gradually (slow start).
   setTimeout(function () {
     if (!mainWindow || mainWindow.isDestroyed()) return
-    const duration = 650
+    const duration = 450
     const start = Date.now()
     const timer = setInterval(function () {
       if (!mainWindow || mainWindow.isDestroyed()) { clearInterval(timer); return }
@@ -382,7 +575,7 @@ function revealMain() {
 }
 
 function maybeReveal() {
-  if (splashExited && pageLoaded) revealMain()
+  if (pageLoaded) revealMain()
 }
 
 function showMain() {
@@ -402,6 +595,26 @@ function showMain() {
 function onServerReady(url) {
   webUrl = url
   log('ready', url)
+  stopReadyPoll()
+  clearBootingMarker()
+  if (dshProc && dshProc.pid) {
+    if (backendOnly) {
+      const existing = readServerState()
+      if (existing && existing.pid !== dshProc.pid && pidAlive(existing.pid)) {
+        // Another instance won the race (its backend is already recorded):
+        // retire silently so exactly one backend survives.
+        log('backend-only: another backend won, retiring')
+        killDsh()
+        app.exit(0)
+        return
+      }
+      writeServerState(url, dshProc.pid)
+      log('backend-only ready', url)
+      app.exit(0)
+      return
+    }
+    writeServerState(url, dshProc.pid)
+  }
   createMainWindow(url)
   if (splashWindow && !splashWindow.isDestroyed()) {
     splashWindow.webContents.send('splash:status', 'ready')
@@ -422,7 +635,7 @@ function retryStartup() {
   revealed = false
   if (mainWindow) { mainWindow.destroy(); mainWindow = null }
   if (splashWindow && !splashWindow.isDestroyed()) splashWindow.webContents.send('splash:retry')
-  killDsh()
+  stopServer()
   startDsh()
 }
 
@@ -536,7 +749,7 @@ function hideTrayMenu() {
 
 function sendMenuData() {
   if (!menuWindow || menuWindow.isDestroyed()) return
-  menuWindow.webContents.send('menu:data', lastBalanceData)
+  menuWindow.webContents.send('menu:data', Object.assign({}, lastBalanceData, { autostartBackend: autostartBackend }))
 }
 
 function showTrayMenu() {
@@ -651,7 +864,9 @@ function createTray() {
 // lifecycle
 // ---------------------------------------------------------------------------
 
-const gotLock = app.requestSingleInstanceLock()
+// The silent logon pre-warm (--backend-only) must not grab the single-instance
+// lock: a user launching the app during pre-warm would otherwise be swallowed.
+const gotLock = backendOnly ? true : app.requestSingleInstanceLock()
 if (!gotLock) {
   app.quit()
 } else {
@@ -674,7 +889,9 @@ if (!gotLock) {
     if (action === 'open') { showMain(); hideTrayMenu() }
     else if (action === 'browser') { if (webUrl) shell.openExternal(webUrl); hideTrayMenu() }
     else if (action === 'refresh') { refreshBalance() }
+    else if (action === 'autostart') { applyAutostart(!autostartBackend) }
     else if (action === 'quit') { isQuitting = true; app.quit() }
+    else if (action === 'stop') { stopServer(); isQuitting = true; app.quit() }
     else hideTrayMenu()
   })
   ipcMain.on('ui:theme', function (_e, theme) {
@@ -687,6 +904,22 @@ if (!gotLock) {
   ipcMain.on('splash:quit', function () { isQuitting = true; app.quit() })
 
   app.whenReady().then(function () {
+    if (backendOnly) {
+      // Silent logon pre-warm: boot the backend, record its URL, exit.
+      // No tray, no windows, no splash.
+      const spec = buildDshSpawn()
+      if (spec) spawnDsh(spec)
+      else app.exit(0)
+      return
+    }
+    // Keep the "backend at logon" setting in sync (also refreshes the exe
+    // path if the install folder moved). Only for the packaged app.
+    autostartBackend = readPrefs().autostartBackend !== false
+    if (process.platform === 'win32' && app.isPackaged) {
+      try {
+        app.setLoginItemSettings({ openAtLogin: autostartBackend, args: ['--backend-only'] })
+      } catch (err) { log('autostart apply error', String(err)) }
+    }
     createTray()
     createSplashWindow()
     startDsh()
@@ -695,7 +928,12 @@ if (!gotLock) {
   app.on('before-quit', function () {
     isQuitting = true
     if (balanceTimer) clearInterval(balanceTimer)
-    killDsh()
+    stopReadyPoll()
+    if (process.env.DSH_DESKTOP_SMOKE === '1' && process.env.DSH_DESKTOP_SMOKE_KEEP !== '1') {
+      // Smoke runs must not leave servers behind.
+      stopServer()
+    }
+    // Otherwise keep the backend running for an instant next launch.
   })
 
   // Keep running in the tray: closing the window hides it instead of quitting.

@@ -82,6 +82,13 @@ html, body {
   color: #ffb3c0;
   box-shadow: inset 0 0 0 1px rgba(255, 90, 120, 0.55), 0 0 14px rgba(255, 45, 85, 0.45);
 }
+.menu-check {
+  margin-left: auto;
+  color: #4d7cff;
+  font-weight: 700;
+  text-shadow: 0 0 8px rgba(77, 107, 254, 0.8);
+}
+.menu-item.off .menu-check { visibility: hidden; }
 .item-icon {
   width: 15px;
   height: 15px;

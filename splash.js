@@ -46,7 +46,7 @@
     body.classList.add('exiting')
     setTimeout(function () {
       if (desktop) desktop.exited()
-    }, 680)
+    }, 450)
   }
 
   if (desktop) {
@@ -54,12 +54,8 @@
       if (st === 'ready') {
         subtitle.textContent = '本地服务已就绪'
         statusEl.textContent = '正在打开 DeepSeek Harness 界面…'
+        doExit()
       }
-    })
-    desktop.onGo(function () {
-      subtitle.textContent = '即将进入'
-      statusEl.textContent = '正在加载界面…'
-      doExit()
     })
     desktop.onError(function (message) {
       content.style.display = 'none'

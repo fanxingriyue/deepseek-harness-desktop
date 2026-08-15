@@ -27,6 +27,11 @@
       if (data.error) balanceTotal.className = 'balance-total err'
       else if (data.low) balanceTotal.className = 'balance-total low'
       else balanceTotal.className = 'balance-total'
+      var autostartItem = document.querySelector('.menu-item[data-action="autostart"]')
+      if (autostartItem) {
+        if (data.autostartBackend) autostartItem.classList.remove('off')
+        else autostartItem.classList.add('off')
+      }
     })
   }
 })()
