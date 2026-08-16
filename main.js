@@ -460,6 +460,38 @@ function injectUiTheme() {
     '}'
   ].join('')
   mainWindow.webContents.insertCSS(navyCss).catch(function () {})
+  // Starfield + meteor shower floating over the dark navy background.
+  const skyCss = [
+    '#ds-star-layer{position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:2147483000}',
+    '#ds-star-layer .ds-star{position:absolute;background:#fff;border-radius:50%;animation:dsTwinkle 3s ease-in-out infinite}',
+    '@keyframes dsTwinkle{0%,100%{opacity:.12}50%{opacity:.9}}',
+    '#ds-star-layer .ds-meteor{position:absolute;width:130px;height:1.6px;border-radius:2px;background:linear-gradient(90deg,rgba(255,255,255,0),rgba(190,215,255,.95));box-shadow:0 0 6px rgba(180,210,255,.7);transform:rotate(-38deg);opacity:0;animation:dsMeteor 8s linear infinite}',
+    '@keyframes dsMeteor{0%{transform:translate3d(0,0,0) rotate(-38deg);opacity:0}2%{opacity:1}10%{transform:translate3d(110vw,55vh,0) rotate(-38deg);opacity:0}100%{transform:translate3d(110vw,55vh,0) rotate(-38deg);opacity:0}}'
+  ].join('')
+  mainWindow.webContents.insertCSS(skyCss).catch(function () {})
+  const skyScript = [
+    '(function(){',
+    'if(window.__dsSkyInjected)return;window.__dsSkyInjected=true;',
+    'function build(){',
+    'if(!document.body){setTimeout(build,200);return}',
+    'var layer=document.createElement("div");layer.id="ds-star-layer";',
+    'for(var i=0;i<70;i++){var s=document.createElement("i");s.className="ds-star";',
+    'var sz=(0.8+Math.random()*1.8).toFixed(1);s.style.width=s.style.height=sz+"px";',
+    's.style.left=(Math.random()*100).toFixed(2)+"%";s.style.top=(Math.random()*100).toFixed(2)+"%";',
+    's.style.animationDuration=(2+Math.random()*4).toFixed(1)+"s";s.style.animationDelay=(-Math.random()*5).toFixed(1)+"s";',
+    's.style.opacity=(0.3+Math.random()*0.6).toFixed(2);layer.appendChild(s);}',
+    'var delays=[0,7,14,21];',
+    'for(var j=0;j<delays.length;j++){var m=document.createElement("i");m.className="ds-meteor";',
+    'm.style.top=(5+Math.random()*30).toFixed(0)+"vh";m.style.left=(-15-Math.random()*10).toFixed(0)+"vw";',
+    'm.style.animationDelay=delays[j]+"s";layer.appendChild(m);}',
+    'document.body.appendChild(layer);',
+    'var sync=function(){layer.style.display=document.body.hasAttribute("data-ds-dark-theme")?"":"none"};sync();',
+    'if(window.MutationObserver){new MutationObserver(sync).observe(document.body,{attributes:true,attributeFilter:["data-ds-dark-theme"]});}',
+    '}',
+    'build();',
+    '})();'
+  ].join('')
+  mainWindow.webContents.executeJavaScript(skyScript).catch(function () {})
   // Report the active theme (light/dark) to the main process so the window
   // background follows the UI's own toggle; dark mode additionally gets the
   // navy palette matching the splash.
@@ -583,8 +615,16 @@ function showMain() {
     if (webUrl) { createMainWindow(webUrl); revealMain() }
     return
   }
-  if (mainWindow.isMinimized()) mainWindow.restore()
-  mainWindow.show()
+  if (mainWindow.isDestroyed()) return
+  if (mainWindow.isMinimized()) {
+    // restore() already brings the window back; an extra show() right after
+    // can cause the visible-then-invisible flicker, so only call show when
+    // the window is actually hidden (close-to-tray).
+    mainWindow.restore()
+    mainWindow.focus()
+    return
+  }
+  if (!mainWindow.isVisible()) mainWindow.show()
   mainWindow.focus()
 }
 
@@ -852,10 +892,8 @@ function createTray() {
   tray = new Tray(img)
   tray.setToolTip(PRODUCT_NAME)
   tray.setContextMenu(null)
-  tray.on('click', function () {
-    if (mainWindow && mainWindow.isVisible()) mainWindow.hide()
-    else showMain()
-  })
+  // Clicking the tray must never hide the window: show (or bring back) it.
+  tray.on('click', function () { showMain() })
   tray.on('right-click', function () { showTrayMenu() })
   startBalancePolling()
 }
