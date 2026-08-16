@@ -722,8 +722,8 @@ function balanceLabel(b) {
 function createMenuWindow() {
   if (menuWindow && !menuWindow.isDestroyed()) return
   menuWindow = new BrowserWindow({
-    width: 262,
-    height: 300,
+    width: 300,
+    height: 340,
     frame: false,
     transparent: true,
     resizable: false,
