@@ -27,6 +27,10 @@ let splashWindow = null
 let menuWindow = null
 let tray = null
 let dshProc = null
+/** Timestamp of the last tray-icon click: clicking the tray must not count
+ *  as "switching to another app" for the splash auto-minimize. */
+let lastTrayClickTime = 0
+let splashBlurTimer = null
 let webUrl = null
 let isQuitting = false
 let splashExited = false
@@ -440,8 +444,18 @@ function createSplashWindow() {
   })
   splashWindow.loadFile(path.join(__dirname, 'splash.html'))
   splashWindow.once('ready-to-show', function () { splashWindow.show(); splashWindow.focus() })
-  // Auto-minimize to the taskbar whenever the user switches to another app.
-  splashWindow.on('blur', function () { splashWindow.minimize() })
+  // Auto-minimize to the taskbar when switching to another app, but NOT
+  // when the tray icon is clicked (blur order vs. tray click is racy on
+  // Windows, so delay and check whether a tray click happened nearby).
+  splashWindow.on('blur', function () {
+    if (splashBlurTimer) return
+    splashBlurTimer = setTimeout(function () {
+      splashBlurTimer = null
+      if (!splashWindow || splashWindow.isDestroyed()) return
+      if (Date.now() - lastTrayClickTime < 400) return
+      splashWindow.minimize()
+    }, 250)
+  })
   splashWindow.on('closed', function () { splashWindow = null })
 }
 
@@ -893,8 +907,14 @@ function createTray() {
   tray.setToolTip(PRODUCT_NAME)
   tray.setContextMenu(null)
   // Clicking the tray must never hide the window: show (or bring back) it.
-  tray.on('click', function () { showMain() })
-  tray.on('right-click', function () { showTrayMenu() })
+  tray.on('click', function () {
+    lastTrayClickTime = Date.now()
+    showMain()
+  })
+  tray.on('right-click', function () {
+    lastTrayClickTime = Date.now()
+    showTrayMenu()
+  })
   startBalancePolling()
 }
 
