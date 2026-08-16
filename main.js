@@ -723,7 +723,7 @@ function createMenuWindow() {
   if (menuWindow && !menuWindow.isDestroyed()) return
   menuWindow = new BrowserWindow({
     width: 300,
-    height: 340,
+    height: 380,
     frame: false,
     transparent: true,
     resizable: false,
