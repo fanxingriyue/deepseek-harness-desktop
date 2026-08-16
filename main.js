@@ -31,6 +31,8 @@ let dshProc = null
  *  as "switching to another app" for the splash auto-minimize. */
 let lastTrayClickTime = 0
 let splashBlurTimer = null
+/** When the user restored/shown the splash via the taskbar (Date.now()). */
+let splashRestoreTime = 0
 let webUrl = null
 let isQuitting = false
 let splashExited = false
@@ -444,6 +446,10 @@ function createSplashWindow() {
   })
   splashWindow.loadFile(path.join(__dirname, 'splash.html'))
   splashWindow.once('ready-to-show', function () { splashWindow.show(); splashWindow.focus() })
+  // Track taskbar restore/show: never re-minimize right after a manual
+  // restore (that made the window bounce between desktop and taskbar).
+  splashWindow.on('restore', function () { splashRestoreTime = Date.now() })
+  splashWindow.on('show', function () { splashRestoreTime = Date.now() })
   // Auto-minimize to the taskbar when switching to another app, but NOT
   // when the tray icon is clicked (blur order vs. tray click is racy on
   // Windows, so delay and check whether a tray click happened nearby).
@@ -453,6 +459,10 @@ function createSplashWindow() {
       splashBlurTimer = null
       if (!splashWindow || splashWindow.isDestroyed()) return
       if (Date.now() - lastTrayClickTime < 400) return
+      // The user just brought the window back via the taskbar: keep it.
+      if (Date.now() - splashRestoreTime < 600) return
+      // Already minimized or refocused in the meantime: nothing to do.
+      if (splashWindow.isMinimized() || splashWindow.isFocused()) return
       splashWindow.minimize()
     }, 250)
   })
